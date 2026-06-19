@@ -642,9 +642,15 @@ def render_add_card_form(sheet):
             return
 
         next_row = len(sheet.col_values(1)) + 1
-        today = datetime.date.today().strftime("%m/%d/%y")
+        today_date = datetime.date.today()
         last_day = calendar.monthrange(expiry_year, expiry_month)[1]
-        expired_date = f"{expiry_month:02d}/{last_day:02d}/{expiry_year % 100:02d}"
+        expired_date_obj = datetime.date(expiry_year, expiry_month, last_day)
+
+        # ส่งวันที่เป็น string แบบ ISO (yyyy-mm-dd) ด้วย USER_ENTERED
+        # รูปแบบนี้ Google Sheets ตีความเป็นวันที่ได้ถูกต้องเสมอ ไม่ขึ้นกับ locale
+        # (ต่างจาก "dd/mm/yyyy" ที่ Sheets อาจเดาเป็น mm/dd/yyyy แล้วฟอร์แมตเพี้ยน)
+        today = today_date.strftime("%Y-%m-%d")
+        expired_date = expired_date_obj.strftime("%Y-%m-%d")
 
         new_row_data = [
             operator,
@@ -662,6 +668,10 @@ def render_add_card_form(sheet):
         ]
 
         sheet.append_row(new_row_data, value_input_option="USER_ENTERED", table_range="A1:A")
+
+        # เพิ่มคำสั่ง copyPaste ตรงนี้ เพื่อดูด Format (ฟอนต์, ขนาด, จัดกึ่งกลาง) จากแถวบนมาใส่แถวใหม่
+        # หมายเหตุ: ถ้าแถวก่อนหน้า (next_row - 2) บังเอิญฟอร์แมตเพี้ยนอยู่แล้ว ฟอร์แมตที่ copy มา
+        # ก็จะเพี้ยนตามไปด้วย — repeatCell ด้านล่างจึงบังคับ format วันที่และขนาดตัวอักษรทับอีกชั้น
         sheet.spreadsheet.batch_update(
             {
                 "requests": [
@@ -679,6 +689,65 @@ def render_add_card_form(sheet):
                                 "strict": True,
                                 "showCustomUi": True,
                             },
+                        }
+                    },
+                    {
+                        "copyPaste": {
+                            "source": {
+                                "sheetId": sheet.id,
+                                "startRowIndex": next_row - 2,
+                                "endRowIndex": next_row - 1,
+                            },
+                            "destination": {
+                                "sheetId": sheet.id,
+                                "startRowIndex": next_row - 1,
+                                "endRowIndex": next_row,
+                            },
+                            "pasteType": "PASTE_FORMAT"
+                        }
+                    },
+                    {
+                        # บังคับ number format ของคอลัมน์ D (วันนำเข้า) และ E (Expired date)
+                        # ให้เป็น dd/mm/yyyy เสมอ ไม่ว่า copyPaste ด้านบนจะดึงฟอร์แมตอะไรมาก็ตาม
+                        "repeatCell": {
+                            "range": {
+                                "sheetId": sheet.id,
+                                "startRowIndex": next_row - 1,
+                                "endRowIndex": next_row,
+                                "startColumnIndex": 3,
+                                "endColumnIndex": 5,
+                            },
+                            "cell": {
+                                "userEnteredFormat": {
+                                    "numberFormat": {
+                                        "type": "DATE",
+                                        "pattern": "dd/mm/yyyy",
+                                    }
+                                }
+                            },
+                            "fields": "userEnteredFormat.numberFormat",
+                        }
+                    },
+                    {
+                        # บังคับขนาดตัวอักษรของแถวใหม่ทั้งแถว (A:L) ให้ตรงกับขนาดมาตรฐานของชีท
+                        # ถ้าฟอนต์ในชีทจริงไม่ใช่ขนาด 10 ให้เปลี่ยนเลข fontSize ตรงนี้ให้ตรงกับของจริง
+                        "repeatCell": {
+                            "range": {
+                                "sheetId": sheet.id,
+                                "startRowIndex": next_row - 1,
+                                "endRowIndex": next_row,
+                                "startColumnIndex": 0,
+                                "endColumnIndex": 12,
+                            },
+                            "cell": {
+                                "userEnteredFormat": {
+                                    "textFormat": {
+                                        "fontSize": 12,
+                                        "bold": False,
+                                    }
+                                }
+                            },
+                            "fields": "userEnteredFormat.textFormat.fontSize,userEnteredFormat.textFormat.bold",
                         }
                     }
                 ]
